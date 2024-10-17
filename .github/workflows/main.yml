@@ -1,3 +1,7 @@
+# 文件: .github/workflows/docker-mirror.yml
+# 版本: 1.1
+# 描述: 将DockerHub镜像复制到GitHub容器注册表(GHCR.IO)的工作流程
+
 name: 将DockerHub镜像复制到GHCR.IO
 
 on:
@@ -16,10 +20,9 @@ on:
         required: true
         default: 'myimage'
 
-
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ inputs.ghcr_image }}  
+  IMAGE_NAME: ${{ inputs.ghcr_image }}
 
 jobs:
   mirror:
@@ -30,21 +33,35 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}  
-          password: ${{ secrets.GITHUB_TOKEN }} 
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 从DockerHub拉取Docker镜像
         run: |
-          docker pull ${{ inputs.dockerhub_image }}:${{ inputs.tag }} || exit 1
+          if ! docker pull ${{ inputs.dockerhub_image }}:${{ inputs.tag }}; then
+            echo "错误：无法从DockerHub拉取镜像"
+            exit 1
+          fi
 
       - name: 设置小写的 GitHub 用户名
         run: echo "ACTOR_LOWER=$(echo '${{ github.actor }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
       
       - name: 为GitHub容器注册表标记Docker镜像
         run: |
-          docker tag ${{ inputs.dockerhub_image }}:${{ inputs.tag }} ${{ env.REGISTRY }}/${{ env.ACTOR_LOWER }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}
+          if ! docker tag ${{ inputs.dockerhub_image }}:${{ inputs.tag }} ${{ env.REGISTRY }}/${{ env.ACTOR_LOWER }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}; then
+            echo "错误：无法为镜像添加标签"
+            exit 1
+          fi
       
       - name: 将Docker镜像推送到GitHub容器注册表
         run: |
-          docker push ${{ env.REGISTRY }}/${{ env.ACTOR_LOWER }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}
+          if ! docker push ${{ env.REGISTRY }}/${{ env.ACTOR_LOWER }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}; then
+            echo "错误：无法将镜像推送到GHCR.IO"
+            exit 1
+          fi
           echo "镜像已成功推送到: ${{ env.REGISTRY }}/${{ env.ACTOR_LOWER }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}"
+          
+          # 输出额外的镜像信息
+          echo "镜像详情:"
+          docker image inspect ${{ env.REGISTRY }}/${{ env.ACTOR_LOWER }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }} --format '{{.Size}}'
+          docker image inspect ${{ env.REGISTRY }}/${{ env.ACTOR_LOWER }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }} --format '{{.Id}}'
